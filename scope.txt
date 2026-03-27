@@ -1,0 +1,9 @@
+The tool isn't even sending the ICMP packets — tcpdump would show the requests if it were. The transport channel is failing silently on the bridge interface.
+
+Tomorrow's fix — high level:
+
+1. Remove the transport channel from icmp_sweep — transport_channel doesn't work reliably on Linux bridge interfaces
+2. Switch to the datalink channel (same as ARP) — construct full Ethernet + IPv4 + ICMP echo request packets for TX, parse Ethernet + IPv4 + ICMP echo reply packets on RX
+3. TX side needs to build: Ethernet frame → IPv4 header → ICMP echo request payload, all manually via pnet mutable packet types
+4. RX side filters incoming frames for IPv4 + ICMP echo reply, extracts source IP and computes latency — same structure as parse_arp_reply
+5. The reason this works: the datalink channel operates at Layer 2 and bypasses the kernel's ICMP socket handling entirely, same reason the ARP sweep works fine today.

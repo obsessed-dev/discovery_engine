@@ -6,12 +6,16 @@ use pnet::{
         MutablePacket, Packet,
         arp::{ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket},
         ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket},
+        icmp::{IcmpCode, IcmpPacket, IcmpTypes, checksum, echo_request::MutableEchoRequestPacket},
+        ip::IpNextHeaderProtocols,
     },
+    transport::{TransportChannelType, TransportProtocol, icmp_packet_iter, transport_channel},
     util::MacAddr,
 };
 use std::{
+    collections::HashMap,
     error::Error,
-    io::{self, ErrorKind},
+    io::ErrorKind,
     net::{IpAddr, Ipv4Addr},
     sync::{Arc, Mutex},
     thread::{self, sleep},
@@ -21,13 +25,16 @@ use std::{
 #[derive(Debug)]
 pub enum DiscoveryMethod {
     Arp,
+    Icmp,
+    Both,
 }
 
 #[derive(Debug)]
 pub struct HostRecord {
     pub ip: Ipv4Addr,
-    pub mac: MacAddr,
+    pub mac: Option<MacAddr>,
     pub vendor: Option<&'static str>,
+    pub latency: Option<Duration>,
     pub method: DiscoveryMethod,
 }
 
@@ -102,8 +109,9 @@ fn parse_arp_reply(frame: &[u8], src_ip: Ipv4Addr) -> Option<HostRecord> {
     let vendor = lookup_mac_vendor(&mac.to_string());
     Some(HostRecord {
         ip,
-        mac,
+        mac: Some(mac),
         vendor,
+        latency: None,
         method: DiscoveryMethod::Arp,
     })
 }
@@ -166,6 +174,101 @@ pub fn sweep(
     let _ = rx_handle.join();
 
     Ok(Arc::try_unwrap(results).unwrap().into_inner().unwrap())
+}
+
+pub fn icmp_sweep(net: &InterfaceNetwork) -> Result<Vec<HostRecord>, Box<dyn Error>> {
+    let protocol =
+        TransportChannelType::Layer4(TransportProtocol::Ipv4(IpNextHeaderProtocols::Icmp));
+    let (mut tx, mut rx) = transport_channel(65535, protocol)?;
+
+    let hosts: Vec<Ipv4Addr> = net
+        .hosts()
+        .filter_map(|ip| {
+            if let IpAddr::V4(v4) = ip {
+                Some(v4)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let send_times: Arc<Mutex<HashMap<Ipv4Addr, Instant>>> = Arc::new(Mutex::new(HashMap::new()));
+    let send_times_tx = Arc::clone(&send_times);
+
+    let tx_handle = thread::spawn(move || {
+        for (seq, target_ip) in hosts.iter().enumerate() {
+            let mut buf = [0u8; 16];
+            let mut echo = MutableEchoRequestPacket::new(&mut buf).unwrap();
+            echo.set_icmp_type(IcmpTypes::EchoRequest);
+            echo.set_icmp_code(IcmpCode(0));
+            echo.set_identifier(0);
+            echo.set_sequence_number(seq as u16);
+            let checksum = checksum(&IcmpPacket::new(echo.packet()).unwrap());
+            echo.set_checksum(checksum);
+            send_times_tx
+                .lock()
+                .unwrap()
+                .insert(*target_ip, Instant::now());
+            let _ = tx.send_to(echo, IpAddr::V4(*target_ip));
+            sleep(Duration::from_millis(1));
+        }
+    });
+
+    let results: Arc<Mutex<Vec<HostRecord>>> = Arc::new(Mutex::new(Vec::new()));
+    let results_rx = Arc::clone(&results);
+    let send_times_rx = Arc::clone(&send_times);
+    let deadline = Instant::now() + Duration::from_secs(3);
+
+    let rx_handle = thread::spawn(move || {
+        let mut iter = icmp_packet_iter(&mut rx);
+        while Instant::now() < deadline {
+            match iter.next_with_timeout(Duration::from_millis(200)) {
+                Ok(Some((packet, addr))) => {
+                    if packet.get_icmp_type() == IcmpTypes::EchoReply {
+                        if let IpAddr::V4(ip) = addr {
+                            let latency =
+                                send_times_rx.lock().unwrap().get(&ip).map(|t| t.elapsed());
+                            results_rx.lock().unwrap().push(HostRecord {
+                                ip,
+                                mac: None,
+                                vendor: None,
+                                latency,
+                                method: DiscoveryMethod::Icmp,
+                            });
+                        }
+                    }
+                }
+                Ok(None) => continue,
+                Err(_) => break,
+            }
+        }
+    });
+
+    let _ = tx_handle.join();
+    let _ = rx_handle.join();
+
+    Ok(Arc::try_unwrap(results).unwrap().into_inner().unwrap())
+}
+
+pub fn merge_results(arp: Vec<HostRecord>, icmp: Vec<HostRecord>) -> Vec<HostRecord> {
+    let mut map: HashMap<Ipv4Addr, HostRecord> = HashMap::new();
+
+    for record in icmp {
+        map.insert(record.ip, record);
+    }
+
+    for record in arp {
+        map.entry(record.ip)
+            .and_modify(|existing| {
+                existing.mac = record.mac;
+                existing.vendor = record.vendor;
+                existing.method = DiscoveryMethod::Both;
+            })
+            .or_insert(record);
+    }
+    let mut results: Vec<HostRecord> = map.into_values().collect();
+    results.sort_by_key(|r| r.ip);
+    results
 }
 
 pub fn scan_interface(name: &str) -> Result<ScannedInterface, Box<dyn Error>> {
