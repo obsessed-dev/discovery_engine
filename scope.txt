@@ -1,9 +1,42 @@
-The tool isn't even sending the ICMP packets — tcpdump would show the requests if it were. The transport channel is failing silently on the bridge interface.
+Milestone 5 — Integration, Validation & Test Suite
+The discovery engine is feature complete with ARP and ICMP sweep, vendor resolution, latency tracking, and comfy-table output confirmed working against a Docker test network. Milestone 5 is about hardening, automated testing, and CI/CD readiness.
+Phase 1 — Unit Tests (no root required, pure logic):
 
-Tomorrow's fix — high level:
+[DONE] Merge/dedup logic — 6 tests passing: icmp_only_has_no_mac, arp_only_has_mac, same_ip_merges_to_both, merged_host_preserves_icmp_latency, no_duplicate_ips_in_output, output_is_sorted_by_ip
+[DONE] CIDR parsing and subnet iteration — /24 host count, /24 skips network address, /31 has 2 hosts, /32 has 1 host
+[DONE] Vendor lookup — 7 tests passing: known_vendor_full_mac_uppercase, known_vendor_full_mac_lowercase, known_vendor_full_mac_mixed_case, known_vendor_oui_only, known_vendor_second_entry, unknown_vendor_returns_none, unknown_oui_only_returns_none
+[SKIPPED] HostRecord construction — plain data struct, no invariants to validate; fields exercised across merge tests
 
-1. Remove the transport channel from icmp_sweep — transport_channel doesn't work reliably on Linux bridge interfaces
-2. Switch to the datalink channel (same as ARP) — construct full Ethernet + IPv4 + ICMP echo request packets for TX, parse Ethernet + IPv4 + ICMP echo reply packets on RX
-3. TX side needs to build: Ethernet frame → IPv4 header → ICMP echo request payload, all manually via pnet mutable packet types
-4. RX side filters incoming frames for IPv4 + ICMP echo reply, extracts source IP and computes latency — same structure as parse_arp_reply
-5. The reason this works: the datalink channel operates at Layer 2 and bypasses the kernel's ICMP socket handling entirely, same reason the ARP sweep works fine today.
+Phase 2 — Integration Tests (assert_cmd + Docker):
+
+[TODO] Use assert_cmd crate to run the discovery binary as a subprocess
+[TODO] Wire up existing Docker bash scripts in tests/ as fixtures — spin up, run binary against br interface, assert known container MACs appear in stdout, tear down
+[TODO] Assert table renders correctly, host count is accurate, no duplicate IPs in output
+[TODO] Run cargo test in a loop a dozen times manually to confirm consistency before moving to CI
+
+Phase 3 — Hardening: [DONE]
+
+[DONE] Replace remaining unwrap/expect calls with proper error propagation — ok_or on icmp packet constructors, expect messages on Arc::try_unwrap chains, unwrap_or_else with mutex poison recovery and warn! logging
+[DONE] Add log crate + env_logger — log/env_logger in Cargo.toml, use log::{debug,info,warn} in lib.rs, env_logger::init() in main.rs, RUST_LOG=level sudo ./discovery works correctly
+[DONE] No new unit tests required — hardening changes are network-bound or don't affect observable behavior, existing suite still complete
+[TODO] Finalize README — libpcap-dev dependency, sudo requirement, Docker test instructions, bash script usage
+
+Phase 4 — Jenkins Pipeline (local Jenkins server):
+
+cargo build --release
+cargo test for unit tests (no privileges)
+Docker network spin up via bash scripts
+Integration tests with CAP_NET_RAW granted to test binary
+Docker teardown
+Archive release binary as build artifact
+Run pipeline in loop for stress testing threading, merge logic, and timeout behavior
+
+Current output confirmed working:
+
+Interface, network, host count header
+comfy-table with IP, MAC, Vendor, Latency, Method columns
+Both method rendering correctly for dual ARP+ICMP hits
+Latency column populated
+Vendor showing dash for unknown MACs as expected
+
+Crates in use: pnet, ipnetwork, clap, comfy-table, mac_vendor_lookup (local path dep, future crates.io publish)

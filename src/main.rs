@@ -1,7 +1,10 @@
 use comfy_table::{Cell, Color, Table};
 use discovery::{DiscoveryMethod, icmp_sweep, merge_results, scan_interface, sweep};
 use std::{env, error::Error, net::IpAddr};
+
 fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
+
     let args: Vec<_> = env::args().skip(1).collect();
 
     if args.is_empty() {
@@ -31,7 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                     };
 
-                    let icmp_records = match icmp_sweep(net) {
+                    let icmp_records = match icmp_sweep(&iface, src_ip, net) {
                         Ok(r) => r,
                         Err(e) => {
                             eprintln!("[-] ICMP sweep failed: {}", e);
