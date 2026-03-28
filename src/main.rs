@@ -77,7 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("{}", table);
                 }
             }
-            Err(e) => eprintln!("Error on '{}': {}", name, e),
+            Err(e) => return Err(format!("Error on '{}': {}", name, e).into()),
         }
     }
     Ok(())

@@ -14,3 +14,11 @@ env_logger = "0.11.10"
 log = "0.4.29"
 mac-vendor-lookup = { path = "../vendor" }
 pnet = "0.35.0"
+
+[[test]]
+name = "integration"
+harness = true
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

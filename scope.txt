@@ -7,12 +7,13 @@ Phase 1 — Unit Tests (no root required, pure logic):
 [DONE] Vendor lookup — 7 tests passing: known_vendor_full_mac_uppercase, known_vendor_full_mac_lowercase, known_vendor_full_mac_mixed_case, known_vendor_oui_only, known_vendor_second_entry, unknown_vendor_returns_none, unknown_oui_only_returns_none
 [SKIPPED] HostRecord construction — plain data struct, no invariants to validate; fields exercised across merge tests
 
-Phase 2 — Integration Tests (assert_cmd + Docker):
+Phase 2 — Integration Tests (assert_cmd + Docker): [DONE]
 
-[TODO] Use assert_cmd crate to run the discovery binary as a subprocess
-[TODO] Wire up existing Docker bash scripts in tests/ as fixtures — spin up, run binary against br interface, assert known container MACs appear in stdout, tear down
-[TODO] Assert table renders correctly, host count is accurate, no duplicate IPs in output
-[TODO] Run cargo test in a loop a dozen times manually to confirm consistency before moving to CI
+[DONE] assert_cmd + predicates added as dev-dependencies
+[DONE] tests/integration.rs — DockerFixture RAII struct handles setup/teardown via Drop, defensive pre-teardown prevents "network already exists" noise on repeat runs
+[DONE] integration_discovers_docker_network — asserts binary exits success, table headers present, 2 hosts discovered, 192.168.99.2 + 192.168.99.3 in stdout, exactly 2 IP rows (no duplicates)
+[DONE] Runs clean on repeat passes — confirmed consistent
+[DONE] Run with: sudo -s, export RUSTUP_HOME/CARGO_HOME/PATH, cargo test --test integration -- --ignored
 
 Phase 3 — Hardening: [DONE]
 
