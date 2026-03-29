@@ -12,15 +12,18 @@ Phase 2 — Integration Tests (assert_cmd + Docker): [DONE]
 [DONE] assert_cmd + predicates added as dev-dependencies
 [DONE] tests/integration.rs — DockerFixture RAII struct handles setup/teardown via Drop, defensive pre-teardown prevents "network already exists" noise on repeat runs
 [DONE] integration_discovers_docker_network — asserts binary exits success, table headers present, 2 hosts discovered, 192.168.99.2 + 192.168.99.3 in stdout, exactly 2 IP rows (no duplicates)
-[DONE] Runs clean on repeat passes — confirmed consistent
-[DONE] Run with: sudo -s, export RUSTUP_HOME/CARGO_HOME/PATH, cargo test --test integration -- --ignored
+[DONE] no_args_prints_usage — asserts failure exit + Usage in stderr
+[DONE] invalid_interface_returns_error — caught real bug: main.rs was returning Ok(()) on scan failure (exit 0), fixed to propagate error (exit 1)
+[DONE] results_are_consistent_across_runs — runs binary twice against live Docker network, asserts same IPs both times
+[DONE] Parallel test conflict resolved — Docker tests share testnet name, fixed with --test-threads=1
+[DONE] Run with: sudo -s, export RUSTUP_HOME/CARGO_HOME/PATH, cargo test --test integration -- --ignored --test-threads=1
 
 Phase 3 — Hardening: [DONE]
 
 [DONE] Replace remaining unwrap/expect calls with proper error propagation — ok_or on icmp packet constructors, expect messages on Arc::try_unwrap chains, unwrap_or_else with mutex poison recovery and warn! logging
 [DONE] Add log crate + env_logger — log/env_logger in Cargo.toml, use log::{debug,info,warn} in lib.rs, env_logger::init() in main.rs, RUST_LOG=level sudo ./discovery works correctly
 [DONE] No new unit tests required — hardening changes are network-bound or don't affect observable behavior, existing suite still complete
-[TODO] Finalize README — libpcap-dev dependency, sudo requirement, Docker test instructions, bash script usage
+[DONE] Finalize README — libpcap-dev dependency, sudo requirement, RUST_LOG logging, full unit + integration test instructions
 
 Phase 4 — Jenkins Pipeline (local Jenkins server):
 

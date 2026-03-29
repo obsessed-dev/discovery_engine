@@ -8,7 +8,6 @@ struct DockerFixture {
 
 impl DockerFixture {
     fn new() -> Self {
-        // Defensive teardown — silently ignore errors if network doesn't exist
         let _ = process::Command::new("bash")
             .arg("tests/docker_teardown.sh")
             .output();
