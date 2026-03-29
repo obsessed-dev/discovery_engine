@@ -6,6 +6,10 @@ pipeline {
         }
     }
 
+    options {
+        skipDefaultCheckout()
+    }
+
     environment {
         CARGO_HOME  = '/var/lib/jenkins/.cargo'
         RUSTUP_HOME = '/var/lib/jenkins/.rustup'
