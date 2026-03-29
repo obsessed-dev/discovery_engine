@@ -34,9 +34,12 @@ pipeline {
 
         stage('Integration Tests') {
             steps {
-                // Build debug binary first so setcap has a stable target.
-                // If cargo test were to recompile discovery, setcap would be wiped.
-                sh 'cargo build'
+                // Compile everything under the test profile without running.
+                // Must use --no-run here rather than 'cargo build' — cargo test uses
+                // a separate 'test' profile that recompiles the discovery binary with
+                // different flags. If we setcap after 'cargo build' (dev profile) and
+                // then 'cargo test' recompiles under the test profile, the caps are wiped.
+                sh 'cargo test --test integration --no-run'
                 sh 'sudo setcap cap_net_raw+ep target/debug/discovery'
 
                 // DockerFixture RAII in the test code handles network setup/teardown.
@@ -45,8 +48,10 @@ pipeline {
             }
             post {
                 always {
-                    // Guarantee teardown even if tests fail mid-run
-                    sh 'bash tests/docker_teardown.sh'
+                    // Safety net teardown — DockerFixture::drop() normally handles this,
+                    // but may not run if the process is killed hard.
+                    // || true: prevents post-stage failure if network is already gone.
+                    sh 'bash tests/docker_teardown.sh || true'
                 }
             }
         }
@@ -66,7 +71,7 @@ pipeline {
             }
             post {
                 always {
-                    sh 'bash tests/docker_teardown.sh'
+                    sh 'bash tests/docker_teardown.sh || true'
                 }
             }
         }
